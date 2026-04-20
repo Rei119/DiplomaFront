@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/store/authStore';
 import { authAPI } from '@/lib/api/client';
-import { LangToggle } from '@/lib/i18n/LanguageContext';
+import { LangToggle, useLanguage } from '@/lib/i18n/LanguageContext';
 import { ThemeToggle } from '@/lib/theme/ThemeContext';
 
 function GoogleIcon() {
@@ -29,6 +29,7 @@ export default function LoginPage() {
 
   const router = useRouter();
   const { login } = useAuthStore();
+  const { language } = useLanguage();
 
   const handleGoogleLogin = () => {
     setGoogleLoading(true);
@@ -46,7 +47,12 @@ export default function LoginPage() {
       login(user, access_token);
       router.push(user.role === 'teacher' ? '/teacher/dashboard' : '/student/dashboard');
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Нэвтрэх амжилтгүй');
+      const detail = err.response?.data?.detail;
+      if (detail === 'not_registered') {
+        setError(language === 'mn' ? 'Бүртгэлгүй хаяг байна' : 'Please register');
+      } else {
+        setError('Нэвтрэх амжилтгүй');
+      }
     } finally {
       setLoading(false);
     }

@@ -45,7 +45,7 @@ export default function AuthCallbackPage() {
       })
       .catch(() => {
         setError('Google нэвтрэлт амжилтгүй болсон');
-        setTimeout(() => router.push('/login'), 2000);
+        setTimeout(() => router.push('/register'), 2000);
       });
   }, [searchParams]);
 
