@@ -72,7 +72,6 @@ export default function ViewResultsPage() {
 
   const totalScore = submission.total_score ?? null;
   const hasScore = totalScore !== null;
-  const passed = hasScore && totalScore >= (exam.passing_score || 70);
   const isFailed = submission.status === 'failed';
 
   const correctCount = exam.questions.filter(
@@ -106,25 +105,14 @@ export default function ViewResultsPage() {
               </p>
             </div>
             <div className="text-right">
-              {isFailed ? (
+              {isFailed && (
                 <div className="mb-2">
                   <span className="badge badge-danger inline-flex items-center gap-1">
-                    <XCircle size={14} />Тэнцээгүй (Хуурсан)
+                    <XCircle size={14} />Хуурсан
                   </span>
                 </div>
-              ) : passed ? (
-                <div className="mb-2">
-                  <span className="badge badge-success inline-flex items-center gap-1">
-                    <CheckCircle size={14} />Тэнцсэн
-                  </span>
-                </div>
-              ) : hasScore ? (
-                <div className="mb-2">
-                  <span className="badge badge-danger inline-flex items-center gap-1">
-                    <XCircle size={14} />Тэнцээгүй
-                  </span>
-                </div>
-              ) : (
+              )}
+              {!hasScore && (
                 <div className="mb-2">
                   <span className="badge badge-neutral inline-flex items-center gap-1">
                     <Clock size={14} />Хүлээгдэж байна
@@ -132,11 +120,7 @@ export default function ViewResultsPage() {
                 </div>
               )}
               {hasScore && (
-                <div className={`text-3xl font-bold ${
-                  isFailed ? 'text-red-600 dark:text-red-400'
-                  : passed ? 'text-green-600 dark:text-green-400'
-                  : 'text-red-600 dark:text-red-400'
-                }`}>
+                <div className="text-3xl font-bold text-neutral-900 dark:text-neutral-100">
                   {totalScore.toFixed(1)}%
                 </div>
               )}
@@ -179,18 +163,9 @@ export default function ViewResultsPage() {
 
           {hasScore && (
             <div className="mt-4">
-              <div className="flex justify-between text-xs text-neutral-500 mb-1">
-                <span>0%</span>
-                <span className="text-neutral-700 dark:text-neutral-300 font-medium">Тэнцэх: {exam.passing_score}%</span>
-                <span>100%</span>
-              </div>
-              <div className="relative h-3 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden">
+              <div className="h-3 bg-neutral-100 dark:bg-neutral-800 rounded-full overflow-hidden">
                 <div
-                  className="absolute top-0 bottom-0 w-0.5 bg-neutral-400 dark:bg-neutral-500 z-10"
-                  style={{ left: `${exam.passing_score}%` }}
-                />
-                <div
-                  className={`h-full rounded-full transition-all ${isFailed || !passed ? 'bg-red-500' : 'bg-green-500'}`}
+                  className="h-full bg-primary-500 rounded-full transition-all"
                   style={{ width: `${Math.min(totalScore, 100)}%` }}
                 />
               </div>

@@ -279,6 +279,8 @@ export default function TakeExam() {
 
   useEffect(() => {
     if (!examStarted || !exam) return;
+    const isMobile = /Mobi|Android/i.test(navigator.userAgent) || navigator.maxTouchPoints > 0;
+    if (isMobile) return;
     const checkFS = () => { if (!document.fullscreenElement) setShowFullscreenPrompt(true); };
     document.addEventListener('fullscreenchange', checkFS);
     const t = setTimeout(() => { if (!document.fullscreenElement) setShowFullscreenPrompt(true); }, 1000);
@@ -405,10 +407,8 @@ export default function TakeExam() {
   const handleInfoSubmit = async (idNumber: string, major: string) => {
     setStudentIdNumber(idNumber);
     setStudentMajor(major);
-    setShowInfoForm(false);
-    setExamStarted(true);
     startTimeRef.current = Date.now();
-    // Start a live session so the teacher can see this student in real-time
+    // Create session BEFORE starting exam so monitor WebSocket has session_id ready
     try {
       const token = sessionStorage.getItem('token');
       const res = await fetch(`${API_BASE}/sessions/start`, {
@@ -417,11 +417,10 @@ export default function TakeExam() {
         body: JSON.stringify({ exam_id: exam?.id, student_id_number: idNumber, student_major: major }),
       });
       const data = await res.json();
-      console.log('[Monitor] Session start response', res.status, data);
       sessionIdRef.current = data.session_id ?? null;
-    } catch (err) {
-      console.error('[Monitor] Session start failed', err);
-    }
+    } catch {}
+    setShowInfoForm(false);
+    setExamStarted(true);
   };
 
   const handleTabSwitch = () => {
