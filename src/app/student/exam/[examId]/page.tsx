@@ -370,6 +370,11 @@ export default function TakeExam() {
     setStudentIdNumber(idNumber);
     setStudentMajor(major);
     startTimeRef.current = Date.now();
+    // Pre-request camera permission so the browser dialog doesn't trigger a tab-switch
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      s.getTracks().forEach(t => t.stop());
+    } catch {}
     // Create session BEFORE starting exam so monitor WebSocket has session_id ready
     try {
       const token = sessionStorage.getItem('token');
