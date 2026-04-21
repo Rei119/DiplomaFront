@@ -6,7 +6,6 @@ import { AlertTriangle, Clock, Send, Eye, User, BookOpen, ArrowRight } from 'luc
 import { Button } from '@/components/common/Button';
 import { Timer } from '@/components/student/Timer';
 import CodeCompiler from '@/components/student/CodeCompiler';
-import CameraTracker, { LookDownEvent } from '@/components/student/CameraTracker';
 import ScienceKeyboard from '@/components/common/ScienceKeyboard';
 import { MathText } from '@/components/common/LatexRenderer';
 
@@ -207,45 +206,8 @@ export default function TakeExam() {
   const monitorPcRef  = useRef<RTCPeerConnection | null>(null);
   const monitorStream = useRef<MediaStream | null>(null);
 
-  const lookDownCountRef = useRef(0);
-  const pendingClipsRef = useRef<{ blob: Blob; timestamp: number }[]>([]);
   const submissionIdRef = useRef<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
-
-  const uploadClip = useCallback(async (blob: Blob, timestamp: number, submissionId: string) => {
-    try {
-      const form = new FormData();
-      form.append('clip', blob, `lookdown_${timestamp}.webm`);
-      form.append('submission_id', submissionId);
-      form.append('timestamp', String(timestamp));
-      await fetch(`${API_BASE}/submissions/clips`, { method: 'POST', body: form });
-    } catch {}
-  }, []);
-
-  const handleLookDown = useCallback((event: LookDownEvent) => {
-    lookDownCountRef.current = event.count;
-    showTemporaryWarning(`Анхааруулга: Доош харсан (${event.count} удаа) — дэлгэц рүү харна уу!`);
-    // Real-time flag to teacher
-    const ws = monitorWsRef.current;
-    if (ws?.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'flag', flag_type: 'look_down', count: event.count, timestamp: event.timestamp }));
-    }
-    if (event.clipBlob) {
-      if (submissionIdRef.current) {
-        uploadClip(event.clipBlob, event.timestamp, submissionIdRef.current);
-      } else {
-        pendingClipsRef.current.push({ blob: event.clipBlob, timestamp: event.timestamp });
-      }
-    }
-  }, [uploadClip]);
-
-  const flushPendingClips = useCallback((submissionId: string) => {
-    submissionIdRef.current = submissionId;
-    for (const { blob, timestamp } of pendingClipsRef.current) {
-      uploadClip(blob, timestamp, submissionId);
-    }
-    pendingClipsRef.current = [];
-  }, [uploadClip]);
 
   useEffect(() => { loadExam(); }, [params.examId]);
 
@@ -529,7 +491,6 @@ export default function TakeExam() {
     if (!payload) return;
     try {
       const r = await submissionsAPI.submit(exam.id, payload);
-      flushPendingClips(r.data.id);
       await markSessionSubmitted(r.data.id);
       router.push(`/student/results/${r.data.id}`);
     } catch (e: any) {
@@ -548,7 +509,6 @@ export default function TakeExam() {
     if (!payload) { submittingRef.current = false; setSubmitting(false); return; }
     try {
       const r = await submissionsAPI.submit(exam.id, payload);
-      flushPendingClips(r.data.id);
       await markSessionSubmitted(r.data.id);
       submittingRef.current = false;
       setSubmitting(false);
@@ -580,7 +540,6 @@ export default function TakeExam() {
   return (
     <div ref={containerRef} className="h-screen overflow-y-auto bg-stone-50 dark:bg-neutral-950">
 
-      <CameraTracker enabled={examStarted} onLookDown={handleLookDown} framesToConfirm={45} />
 
       {showWarning && (
         <div className="fixed top-0 left-0 right-0 z-50 bg-red-600 text-white px-4 py-3 shadow-lg">
