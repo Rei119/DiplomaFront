@@ -208,6 +208,7 @@ export default function TakeExam() {
 
   const submissionIdRef = useRef<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
 
   useEffect(() => { loadExam(); }, [params.examId]);
 
@@ -288,9 +289,14 @@ export default function TakeExam() {
           audio: false,
         });
         monitorStream.current = stream;
+        setCameraStream(stream);
 
         const pc = new RTCPeerConnection({
-          iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+          ],
         });
         monitorPcRef.current = pc;
 
@@ -347,6 +353,7 @@ export default function TakeExam() {
       monitorWsRef.current  = null;
       monitorPcRef.current  = null;
       monitorStream.current = null;
+      setCameraStream(null);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [examStarted, exam?.exam_code]);
@@ -565,6 +572,25 @@ export default function TakeExam() {
             <p className="text-neutral-600 dark:text-neutral-400 text-sm mb-6">Шалгалтыг үргэлжлүүлэхийн тулд бүтэн дэлгэц горимд орно уу</p>
             <Button variant="primary" fullWidth onClick={enterFullscreen} icon={Eye}>Бүтэн дэлгэц болгох</Button>
           </div>
+        </div>
+      )}
+
+      {/* Camera widget */}
+      {examStarted && (
+        <div className="fixed bottom-4 right-4 z-40 w-36 rounded-xl overflow-hidden border border-neutral-300 dark:border-neutral-700 shadow-lg bg-neutral-900">
+          <div className="flex items-center gap-1.5 px-2 py-1 bg-neutral-800">
+            <div className={`w-1.5 h-1.5 rounded-full ${cameraStream ? 'bg-green-400 animate-pulse' : 'bg-red-400'}`} />
+            <span className="text-[10px] text-neutral-300 font-medium">Камер</span>
+          </div>
+          {cameraStream ? (
+            <video
+              autoPlay playsInline muted
+              className="w-full h-24 object-cover"
+              ref={el => { if (el && cameraStream) el.srcObject = cameraStream; }}
+            />
+          ) : (
+            <div className="w-full h-24 flex items-center justify-center text-neutral-500 text-xs">Холбогдож байна...</div>
+          )}
         </div>
       )}
 

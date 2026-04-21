@@ -10,7 +10,11 @@ import {
 } from 'lucide-react';
 
 const PAGE_SIZE = 12;
-const STUN = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+const STUN = { iceServers: [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+] };
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -66,8 +70,13 @@ function StudentVideoCard({ card }: { card: StudentCard }) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    if (videoRef.current && card.stream) {
-      videoRef.current.srcObject = card.stream;
+    const video = videoRef.current;
+    if (!video) return;
+    if (card.stream) {
+      video.srcObject = card.stream;
+      video.play().catch(() => {});
+    } else {
+      video.srcObject = null;
     }
   }, [card.stream]);
 
