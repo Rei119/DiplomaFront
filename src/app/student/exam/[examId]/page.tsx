@@ -412,13 +412,8 @@ export default function TakeExam() {
     const deductPts = (exam as any)?.tab_switch_deduct_points ?? 0;
 
     if (n >= max) {
-      if (autoFail) {
-        showTemporaryWarning(`${max} удаа таб солисон тул автоматаар тэнцээгүй!`);
-        autoSubmit(true);
-      } else {
-        const pts = deductPts > 0 ? ` (${deductPts} оноо хасагдлаа)` : '';
-        showTemporaryWarning(`Анхааруулга: Таб солилт ${n}/${max}${pts}. Шалгалт үргэлжилнэ.`);
-      }
+      showTemporaryWarning(`${max} удаа таб солисон тул автоматаар тэнцээгүй!`);
+      autoSubmit(true);
     } else {
       const pts = !autoFail && deductPts > 0 ? ` — ${deductPts} оноо хасагдлаа` : '';
       showTemporaryWarning(`Анхааруулга: Таб солилт ${n}/${max}. ${max - n} удаа үлдсэн${pts}!`);
