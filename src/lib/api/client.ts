@@ -85,6 +85,8 @@ export const submissionsAPI = {
   submit: (examId: string, data: {
     answers: { question_id: string; answer: string | string[] }[];
     tab_switches: number;
+    copy_paste_count?: number;
+    fullscreen_exit_count?: number;
     start_time: number;
     student_id_number?: string;
     student_major?: string;
@@ -98,6 +100,8 @@ export const submissionsAPI = {
     return api.post(`/submissions/exams/${examId}/submit`, {
       answers: answersDict,
       tab_switches: data.tab_switches ?? 0,
+      copy_paste_count: data.copy_paste_count ?? 0,
+      fullscreen_exit_count: data.fullscreen_exit_count ?? 0,
       behavior_score: 100,
       start_time: data.start_time,
       submit_time: Date.now(),

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { AlertTriangle, Clock, Send, Eye, User, BookOpen, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/common/Button';
@@ -201,12 +201,20 @@ export default function TakeExam() {
   const startTimeRef = useRef<number>(Date.now());
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Live monitor WebRTC/WebSocket refs
-  const monitorWsRef  = useRef<WebSocket | null>(null);
-  const monitorPcRef  = useRef<RTCPeerConnection | null>(null);
-  const monitorStream = useRef<MediaStream | null>(null);
+  // Anti-cheat counters (refs so they survive re-renders without causing them)
+  const lastTabSwitchTimeRef = useRef(0);   // debounce blur+visibilitychange double-fire
+  const copyPasteRef = useRef(0);
+  const fullscreenExitRef = useRef(0);
+  const wasFullscreenRef = useRef(false);   // true once student has entered fullscreen
+  const captureCanvasRef = useRef<HTMLCanvasElement | null>(null); // reused for snapshots
 
-  const submissionIdRef = useRef<string | null>(null);
+  // Live monitor: WebSocket + canvas-snapshot + WebRTC refs
+  const monitorWsRef     = useRef<WebSocket | null>(null);
+  const monitorStream    = useRef<MediaStream | null>(null);
+  const cameraVideoRef   = useRef<HTMLVideoElement | null>(null);
+  const frameIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const monitorPcRef     = useRef<RTCPeerConnection | null>(null);
+
   const sessionIdRef = useRef<string | null>(null);
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
 
@@ -214,29 +222,38 @@ export default function TakeExam() {
 
   useEffect(() => {
     if (!examStarted) return;
-    const preventCopyPaste = (e: ClipboardEvent) => { e.preventDefault(); showTemporaryWarning('Хуулах, буулгах хориотой!'); };
+    const trackCopyPaste = (e: ClipboardEvent) => {
+      e.preventDefault();
+      copyPasteRef.current += 1;
+      const ws = monitorWsRef.current;
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'flag', flag_type: 'copy_paste', count: copyPasteRef.current, timestamp: Date.now() }));
+      }
+      showTemporaryWarning('Хуулах, буулгах хориотой!');
+    };
     const preventContextMenu = (e: MouseEvent) => { e.preventDefault(); showTemporaryWarning('Баруун товч хориотой!'); };
-    document.addEventListener('copy', preventCopyPaste);
-    document.addEventListener('cut', preventCopyPaste);
-    document.addEventListener('paste', preventCopyPaste);
+    document.addEventListener('copy', trackCopyPaste);
+    document.addEventListener('cut', trackCopyPaste);
+    document.addEventListener('paste', trackCopyPaste);
     document.addEventListener('contextmenu', preventContextMenu);
     return () => {
-      document.removeEventListener('copy', preventCopyPaste);
-      document.removeEventListener('cut', preventCopyPaste);
-      document.removeEventListener('paste', preventCopyPaste);
+      document.removeEventListener('copy', trackCopyPaste);
+      document.removeEventListener('cut', trackCopyPaste);
+      document.removeEventListener('paste', trackCopyPaste);
       document.removeEventListener('contextmenu', preventContextMenu);
     };
   }, [examStarted]);
 
   useEffect(() => {
     if (!examStarted || !exam) return;
+    // visibilitychange is the correct API for tab/app switching on both desktop and mobile.
+    // blur is intentionally NOT used — on mobile it fires for unrelated reasons (keyboard,
+    // notification bar, address bar) and can fire seconds after visibilitychange, making
+    // any debounce ineffective and causing double-counts.
     const onVisChange = () => { if (document.hidden) handleTabSwitch(); };
-    const onBlur = () => { handleTabSwitch(); };
     document.addEventListener('visibilitychange', onVisChange);
-    window.addEventListener('blur', onBlur);
     return () => {
       document.removeEventListener('visibilitychange', onVisChange);
-      window.removeEventListener('blur', onBlur);
     };
   }, [examStarted, exam]);
 
@@ -244,10 +261,39 @@ export default function TakeExam() {
     if (!examStarted || !exam) return;
     const isMobile = /Mobi|Android/i.test(navigator.userAgent) || navigator.maxTouchPoints > 0;
     if (isMobile) return;
-    const checkFS = () => { if (!document.fullscreenElement) setShowFullscreenPrompt(true); };
+    const isFullscreen = () =>
+      !!(document.fullscreenElement
+        || (document as any).webkitFullscreenElement
+        || (document as any).mozFullScreenElement
+        || (document as any).msFullscreenElement);
+    const checkFS = () => {
+      if (isFullscreen()) {
+        wasFullscreenRef.current = true;
+      } else {
+        if (wasFullscreenRef.current) {
+          // Student was in fullscreen and just exited — count it.
+          wasFullscreenRef.current = false;
+          fullscreenExitRef.current += 1;
+          const ws = monitorWsRef.current;
+          if (ws?.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({ type: 'flag', flag_type: 'fullscreen_exit', count: fullscreenExitRef.current, timestamp: Date.now() }));
+          }
+          showTemporaryWarning(`Анхааруулга: Бүтэн дэлгэцээс гарлаа! (${fullscreenExitRef.current} удаа)`);
+        }
+        setShowFullscreenPrompt(true);
+      }
+    };
     document.addEventListener('fullscreenchange', checkFS);
-    const t = setTimeout(() => { if (!document.fullscreenElement) setShowFullscreenPrompt(true); }, 1000);
-    return () => { document.removeEventListener('fullscreenchange', checkFS); clearTimeout(t); };
+    document.addEventListener('webkitfullscreenchange', checkFS);
+    document.addEventListener('mozfullscreenchange', checkFS);
+    // Initial check — only show prompt, don't count as an exit
+    const t = setTimeout(() => { if (!isFullscreen()) setShowFullscreenPrompt(true); }, 1000);
+    return () => {
+      document.removeEventListener('fullscreenchange', checkFS);
+      document.removeEventListener('webkitfullscreenchange', checkFS);
+      document.removeEventListener('mozfullscreenchange', checkFS);
+      clearTimeout(t);
+    };
   }, [examStarted, exam]);
 
   // Heartbeat: keep teacher's live view updated every 30s
@@ -260,103 +306,163 @@ export default function TakeExam() {
         await fetch(`${API_BASE}/sessions/${sessionIdRef.current}/heartbeat`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ tab_switches: tabSwitchRef.current }),
+          body: JSON.stringify({
+            tab_switches: tabSwitchRef.current,
+            copy_paste_count: copyPasteRef.current,
+            fullscreen_exit_count: fullscreenExitRef.current,
+          }),
         });
       } catch {}
     }, 30_000);
     return () => clearInterval(interval);
   }, [examStarted]);
 
-  // ── Live monitor: WebSocket + WebRTC camera stream ──────────────────────────
+  // ── Live monitor: canvas snapshots (always) + WebRTC (best-effort live) ─────
   useEffect(() => {
     if (!examStarted || !exam || !sessionIdRef.current) return;
-    if (!exam.exam_code) {
-      console.warn('[Monitor] exam.exam_code is missing — skipping WS');
-      return;
-    }
+    if (!exam.exam_code) return;
 
     const token   = sessionStorage.getItem('token');
     const apiBase = (process.env.NEXT_PUBLIC_API_URL?.replace('/api', '') || 'http://localhost:8000')
       .replace(/^http/, 'ws');
-    console.log('[Monitor] Student connecting WS to', `${apiBase}/ws/monitor/${exam.exam_code}`);
     const ws = new WebSocket(`${apiBase}/ws/monitor/${exam.exam_code}?token=${token}`);
     monitorWsRef.current = ws;
 
-    const startStream = async () => {
+    // ── Acquire camera + start snapshot interval ──────────────────────────────
+    // cameraVideoRef points to the VISIBLE camera widget — always decoded by the
+    // browser because it's a real on-screen element with proper dimensions.
+    const startCamera = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { width: 320, height: 240, facingMode: 'user' },
-          audio: false,
-        });
-        monitorStream.current = stream;
-        setCameraStream(stream);
+        let stream = monitorStream.current;
+        if (!stream || stream.getTracks().every(t => t.readyState === 'ended')) {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 320 }, height: { ideal: 240 }, facingMode: 'user' },
+            audio: false,
+          });
+          monitorStream.current = stream;
+          setCameraStream(stream);   // triggers re-render → mounts visible video → ref set
+        }
 
-        const pc = new RTCPeerConnection({
-          iceServers: [
-            { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' },
-            { urls: 'stun:stun2.l.google.com:19302' },
-          ],
+        // Restart automatically if the camera track ends mid-exam (revoked, hardware issue).
+        stream.getTracks().forEach(track => {
+          track.onended = () => {
+            if (monitorStream.current !== stream) return; // already superseded
+            if (!monitorWsRef.current || monitorWsRef.current.readyState !== WebSocket.OPEN) return;
+            monitorStream.current = null;
+            setCameraStream(null);
+            setTimeout(startCamera, 1000);
+          };
         });
+
+        // Reuse one canvas across all snapshot ticks — avoid GC churn.
+        if (!captureCanvasRef.current) {
+          const canvas = document.createElement('canvas');
+          canvas.width = 320; canvas.height = 240;
+          captureCanvasRef.current = canvas;
+        }
+
+        // Snapshot interval — sends JPEG every 1.5 s regardless of WebRTC state.
+        // cameraVideoRef.current is null until the React render after setCameraStream;
+        // the guard inside the tick skips gracefully until it is available.
+        if (frameIntervalRef.current) clearInterval(frameIntervalRef.current);
+        frameIntervalRef.current = setInterval(() => {
+          if (document.hidden || ws.readyState !== WebSocket.OPEN) return;
+          const video = cameraVideoRef.current;
+          // videoWidth === 0 means the browser hasn't decoded any frame yet.
+          if (!video || video.readyState < 2 || video.videoWidth === 0) return;
+          const canvas = captureCanvasRef.current!;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return;
+          ctx.drawImage(video, 0, 0, 320, 240);
+          const base64 = canvas.toDataURL('image/jpeg', 0.6).split(',')[1];
+          if (base64) ws.send(JSON.stringify({ type: 'frame', data: base64 }));
+        }, 1500);
+
+        // ── WebRTC offer (best-effort live video for same-network) ──────────
+        startWebRTC(stream);
+      } catch { /* camera denied — exam continues without monitoring */ }
+    };
+
+    // ── Simple WebRTC offer (trickle ICE, no TURN) ────────────────────────────
+    const startWebRTC = async (stream: MediaStream) => {
+      try {
+        monitorPcRef.current?.close();
+        const pc = new RTCPeerConnection({ iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+          { urls: 'stun:stun1.l.google.com:19302' },
+        ]});
         monitorPcRef.current = pc;
 
         stream.getTracks().forEach(t => pc.addTrack(t, stream));
 
         pc.onicecandidate = (e) => {
-          if (e.candidate && ws.readyState === WebSocket.OPEN) {
+          if (e.candidate && ws.readyState === WebSocket.OPEN)
             ws.send(JSON.stringify({ type: 'ice', candidate: e.candidate }));
+        };
+        pc.oniceconnectionstatechange = () => {
+          if ((pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected')
+              && monitorPcRef.current === pc && ws.readyState === WebSocket.OPEN) {
+            setTimeout(() => {
+              const s = monitorStream.current;
+              if (s) startWebRTC(s);
+            }, 3000);
           }
         };
 
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-        if (ws.readyState === WebSocket.OPEN) {
+        if (ws.readyState === WebSocket.OPEN)
           ws.send(JSON.stringify({ type: 'offer', sdp: pc.localDescription }));
-        }
-      } catch {
-        // Camera permission denied or unavailable — fail silently, exam continues
-      }
+      } catch { /* WebRTC not supported — snapshots still work */ }
     };
 
     ws.onopen = () => {
-      console.log('[Monitor] Student WS connected to', ws.url);
       ws.send(JSON.stringify({
-        type: 'register',
-        role: 'student',
+        type: 'register', role: 'student',
         session_id: sessionIdRef.current,
         name: user?.full_name || user?.username || 'Student',
       }));
+      startCamera();
     };
-
-    ws.onerror = (e) => console.error('[Monitor] Student WS error', e);
-    ws.onclose = (e) => console.warn('[Monitor] Student WS closed', e.code, e.reason);
+    ws.onerror = () => {};
+    ws.onclose = () => {};
 
     ws.onmessage = async (e) => {
       const msg = JSON.parse(e.data);
       if (msg.type === 'request_offer') {
-        await startStream();
+        const s = monitorStream.current;
+        if (s) startWebRTC(s);
       }
       if (msg.type === 'answer' && monitorPcRef.current) {
-        await monitorPcRef.current.setRemoteDescription(
-          new RTCSessionDescription(msg.sdp)
-        );
+        try { await monitorPcRef.current.setRemoteDescription(new RTCSessionDescription(msg.sdp)); } catch {}
       }
-      if (msg.type === 'ice' && monitorPcRef.current) {
+      if (msg.type === 'ice' && monitorPcRef.current?.remoteDescription) {
         try { await monitorPcRef.current.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {}
       }
     };
 
     return () => {
+      if (frameIntervalRef.current) { clearInterval(frameIntervalRef.current); frameIntervalRef.current = null; }
       ws.close();
-      monitorPcRef.current?.close();
-      monitorStream.current?.getTracks().forEach(t => t.stop());
-      monitorWsRef.current  = null;
-      monitorPcRef.current  = null;
-      monitorStream.current = null;
+      monitorPcRef.current?.close(); monitorPcRef.current = null;
+      monitorStream.current?.getTracks().forEach(t => { t.onended = null; t.stop(); });
+      monitorWsRef.current = null; monitorStream.current = null;
+      captureCanvasRef.current = null;
+      // cameraVideoRef is now the React-managed visible widget — don't remove() it.
+      cameraVideoRef.current = null;
       setCameraStream(null);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [examStarted, exam?.exam_code]);
+
+  // Keep the visible camera widget in sync when the stream is set or cleared.
+  // Runs after render, so cameraVideoRef.current is already attached to the DOM element.
+  useEffect(() => {
+    const vid = cameraVideoRef.current;
+    if (!vid) return;
+    vid.srcObject = cameraStream;
+    if (cameraStream) vid.play().catch(() => {});
+  }, [cameraStream]);
 
   const loadExam = async () => {
     try {
@@ -399,6 +505,10 @@ export default function TakeExam() {
 
   const handleTabSwitch = () => {
     if (submittingRef.current) return;
+    // Both 'blur' and 'visibilitychange' fire on the same user action — dedupe within 500 ms.
+    const now = Date.now();
+    if (now - lastTabSwitchTimeRef.current < 500) return;
+    lastTabSwitchTimeRef.current = now;
     tabSwitchRef.current += 1;
     const n = tabSwitchRef.current;
     // Real-time flag to teacher
@@ -427,12 +537,17 @@ export default function TakeExam() {
   };
 
   const enterFullscreen = async () => {
+    const el = document.documentElement as any;
     try {
-      if (containerRef.current) {
-        await containerRef.current.requestFullscreen();
-        setShowFullscreenPrompt(false);
-      }
-    } catch {}
+      await (el.requestFullscreen?.()
+        ?? el.webkitRequestFullscreen?.()
+        ?? el.mozRequestFullScreen?.()
+        ?? el.msRequestFullscreen?.());
+      setShowFullscreenPrompt(false);
+    } catch {
+      // Browser blocked fullscreen (e.g. Firefox requires user gesture inside iframe)
+      setShowFullscreenPrompt(false); // hide prompt so exam can still proceed
+    }
   };
 
   const handleAnswerChange = (qId: string, answer: string | string[]) =>
@@ -473,6 +588,8 @@ export default function TakeExam() {
     return {
       answers: answersArray,
       tab_switches: tabSwitchRef.current,
+      copy_paste_count: copyPasteRef.current,
+      fullscreen_exit_count: fullscreenExitRef.current,
       start_time: startTimeRef.current,
       student_id_number: studentIdNumber,
       student_major: studentMajor,
@@ -570,7 +687,7 @@ export default function TakeExam() {
         </div>
       )}
 
-      {/* Camera widget */}
+      {/* Camera widget — also the source element for snapshot captures (cameraVideoRef). */}
       {examStarted && (
         <div className="fixed bottom-4 right-4 z-40 w-36 rounded-xl overflow-hidden border border-neutral-300 dark:border-neutral-700 shadow-lg bg-neutral-900">
           <div className="flex items-center gap-1.5 px-2 py-1 bg-neutral-800">
@@ -581,7 +698,7 @@ export default function TakeExam() {
             <video
               autoPlay playsInline muted
               className="w-full h-24 object-cover"
-              ref={el => { if (el && cameraStream) el.srcObject = cameraStream; }}
+              ref={cameraVideoRef}
             />
           ) : (
             <div className="w-full h-24 flex items-center justify-center text-neutral-500 text-xs">Холбогдож байна...</div>

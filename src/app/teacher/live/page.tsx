@@ -4,17 +4,12 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/lib/store/authStore';
 import {
-  ArrowLeft, RefreshCw, Users, CheckCircle, Clock,
+  ArrowLeft, RefreshCw, Users, CheckCircle,
   AlertTriangle, Wifi, WifiOff, ChevronLeft, ChevronRight,
-  VideoOff, Eye, MonitorOff,
+  VideoOff, MonitorOff,
 } from 'lucide-react';
 
 const PAGE_SIZE = 12;
-const STUN = { iceServers: [
-  { urls: 'stun:stun.l.google.com:19302' },
-  { urls: 'stun:stun1.l.google.com:19302' },
-  { urls: 'stun:stun2.l.google.com:19302' },
-] };
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -24,11 +19,13 @@ interface StudentCard {
   flag_count: number;
   flags: { type: string; timestamp: number }[];
   status: 'active' | 'submitted' | 'abandoned';
-  tab_switches: number;     // from HTTP polling
+  tab_switches: number;
+  copy_paste_count: number;
+  fullscreen_exit_count: number;
   elapsed_ms: number;
   score: number | null;
-  stream: MediaStream | null;
-  pc: RTCPeerConnection | null;
+  stream:   MediaStream | null;   // WebRTC live (best-effort, same network)
+  frameUrl: string | null;        // canvas snapshot fallback (all networks)
 }
 
 interface LiveSession {
@@ -41,6 +38,8 @@ interface LiveSession {
   last_heartbeat: number;
   elapsed_ms: number;
   tab_switches: number;
+  copy_paste_count: number;
+  fullscreen_exit_count: number;
   status: 'active' | 'submitted' | 'abandoned';
   score: number | null;
 }
@@ -70,14 +69,10 @@ function StudentVideoCard({ card }: { card: StudentCard }) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    if (card.stream) {
-      video.srcObject = card.stream;
-      video.play().catch(() => {});
-    } else {
-      video.srcObject = null;
-    }
+    const v = videoRef.current;
+    if (!v) return;
+    if (card.stream) { v.srcObject = card.stream; v.play().catch(() => {}); }
+    else { v.srcObject = null; }
   }, [card.stream]);
 
   const flagColor =
@@ -95,16 +90,12 @@ function StudentVideoCard({ card }: { card: StudentCard }) {
         : 'border-neutral-200 dark:border-neutral-700'
     } bg-neutral-900`}>
 
-      {/* Video */}
+      {/* Live stream (WebRTC) preferred; snapshot (WS relay) as fallback */}
       <div className="relative aspect-video bg-neutral-800 flex items-center justify-center">
         {card.stream ? (
-          <video
-            ref={videoRef}
-            autoPlay
-            playsInline
-            muted
-            className="w-full h-full object-cover"
-          />
+          <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
+        ) : card.frameUrl ? (
+          <img src={card.frameUrl} className="w-full h-full object-cover" alt="" />
         ) : (
           <div className="flex flex-col items-center gap-2 text-neutral-500">
             <VideoOff size={24} />
@@ -112,10 +103,8 @@ function StudentVideoCard({ card }: { card: StudentCard }) {
           </div>
         )}
 
-        {/* Status dot */}
         <span className={`absolute top-2 left-2 w-2 h-2 rounded-full ${statusDot}`} />
 
-        {/* Flag badge */}
         {card.flag_count > 0 && (
           <div className={`absolute top-2 right-2 ${flagColor} text-white text-xs font-bold px-1.5 py-0.5 rounded-full min-w-[20px] text-center leading-tight`}>
             ⚠ {card.flag_count}
@@ -132,12 +121,22 @@ function StudentVideoCard({ card }: { card: StudentCard }) {
           <span className="text-[10px] text-neutral-400 dark:text-neutral-500 tabular-nums">
             {fmt(card.elapsed_ms)}
           </span>
-          <div className="flex items-center gap-2 text-[10px]">
+          <div className="flex items-center gap-1.5 text-[10px] flex-wrap">
             {card.tab_switches > 0 && (
               <span className={`tabular-nums font-medium ${
                 card.tab_switches >= 3 ? 'text-red-500' : 'text-amber-500'
-              }`}>
+              }`} title="Таб солилт">
                 tab×{card.tab_switches}
+              </span>
+            )}
+            {card.copy_paste_count > 0 && (
+              <span className="tabular-nums font-medium text-orange-500" title="Хуулах/буулгах">
+                cp×{card.copy_paste_count}
+              </span>
+            )}
+            {card.fullscreen_exit_count > 0 && (
+              <span className="tabular-nums font-medium text-purple-500" title="Бүтэн дэлгэц гарсан">
+                fs×{card.fullscreen_exit_count}
               </span>
             )}
             {card.score !== null && (
@@ -172,7 +171,7 @@ export default function LiveMonitorPage() {
   const [cards, setCards] = useState<Map<string, StudentCard>>(new Map());
 
   const wsRef   = useRef<WebSocket | null>(null);
-  const pcsRef  = useRef<Map<string, RTCPeerConnection>>(new Map());   // session_id → pc
+  const pcsRef  = useRef<Map<string, RTCPeerConnection>>(new Map());
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // ── HTTP polling for session metadata ──────────────────────────────────────
@@ -191,19 +190,20 @@ export default function LiveMonitorPage() {
       setCards(prev => {
         const next = new Map(prev);
         (data.sessions as LiveSession[]).forEach(s => {
-          const name = s.full_name || s.username || '—';
           const existing = next.get(s.session_id);
           next.set(s.session_id, {
-            session_id:   s.session_id,
-            name,
-            flag_count:   existing?.flag_count   ?? 0,
-            flags:        existing?.flags         ?? [],
-            stream:       existing?.stream        ?? null,
-            pc:           existing?.pc            ?? null,
-            status:       s.status,
-            tab_switches: s.tab_switches,
-            elapsed_ms:   s.elapsed_ms,
-            score:        s.score,
+            session_id:           s.session_id,
+            name:                 s.full_name || s.username || '—',
+            flag_count:           existing?.flag_count           ?? 0,
+            flags:                existing?.flags                ?? [],
+            stream:               existing?.stream               ?? null,
+            frameUrl:             existing?.frameUrl             ?? null,
+            status:               s.status,
+            tab_switches:         s.tab_switches,
+            copy_paste_count:     s.copy_paste_count             ?? 0,
+            fullscreen_exit_count: s.fullscreen_exit_count       ?? 0,
+            elapsed_ms:           s.elapsed_ms,
+            score:                s.score,
           });
         });
         return next;
@@ -211,46 +211,66 @@ export default function LiveMonitorPage() {
     } catch {}
   }, []);
 
-  // ── WebRTC: handle incoming offer from a student ───────────────────────────
+  // ── WebRTC: handle offer from student (simple trickle ICE, no TURN) ─────────
 
   const handleOffer = useCallback(async (session_id: string, sdp: RTCSessionDescriptionInit) => {
     const ws = wsRef.current;
     if (!ws) return;
 
-    // Clean up old PC if reconnecting
     pcsRef.current.get(session_id)?.close();
-
-    const pc = new RTCPeerConnection(STUN);
+    const pc = new RTCPeerConnection({ iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+    ]});
     pcsRef.current.set(session_id, pc);
 
     pc.onicecandidate = (e) => {
-      if (e.candidate && ws.readyState === WebSocket.OPEN) {
+      if (e.candidate && ws.readyState === WebSocket.OPEN)
         ws.send(JSON.stringify({ type: 'ice', session_id, candidate: e.candidate }));
-      }
     };
 
+    // Store track but only expose stream to UI once ICE is actually connected.
+    // ontrack fires before ICE completes — showing the stream too early gives a
+    // black video that hides the snapshot fallback.
+    let pendingStream: MediaStream | null = null;
     pc.ontrack = (e) => {
-      const stream = e.streams[0];
-      setCards(prev => {
-        const next = new Map(prev);
-        const card = next.get(session_id);
-        if (card) next.set(session_id, { ...card, stream, pc });
-        return next;
-      });
+      pendingStream = e.streams?.[0] ?? new MediaStream([e.track]);
+    };
+    pc.oniceconnectionstatechange = () => {
+      if ((pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') && pendingStream) {
+        const stream = pendingStream;
+        setCards(prev => {
+          const next = new Map(prev);
+          const card = next.get(session_id);
+          if (card) next.set(session_id, { ...card, stream });
+          return next;
+        });
+      }
+      if (pc.iceConnectionState === 'failed' || pc.iceConnectionState === 'disconnected') {
+        // ICE failed — clear stream so snapshot fallback shows
+        setCards(prev => {
+          const next = new Map(prev);
+          const card = next.get(session_id);
+          if (card) next.set(session_id, { ...card, stream: null });
+          return next;
+        });
+      }
     };
 
     await pc.setRemoteDescription(new RTCSessionDescription(sdp));
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-
-    if (ws.readyState === WebSocket.OPEN) {
+    if (ws.readyState === WebSocket.OPEN)
       ws.send(JSON.stringify({ type: 'answer', session_id, sdp: pc.localDescription }));
-    }
+  }, []);
 
+  // ── Snapshot frame from student ───────────────────────────────────────────
+
+  const handleFrame = useCallback((session_id: string, data: string) => {
     setCards(prev => {
       const next = new Map(prev);
       const card = next.get(session_id);
-      if (card) next.set(session_id, { ...card, pc });
+      if (card) next.set(session_id, { ...card, frameUrl: `data:image/jpeg;base64,${data}` });
       return next;
     });
   }, []);
@@ -258,7 +278,6 @@ export default function LiveMonitorPage() {
   // ── Connect WebSocket + start monitoring ───────────────────────────────────
 
   const startMonitoring = useCallback(async (code: string) => {
-    // Close any previous ws
     wsRef.current?.close();
     pcsRef.current.forEach(pc => pc.close());
     pcsRef.current.clear();
@@ -266,53 +285,38 @@ export default function LiveMonitorPage() {
     setPage(0);
 
     const token = sessionStorage.getItem('token');
-    const wsUrl = `${wsBase()}/ws/monitor/${code}?token=${token ? token.slice(0, 10) + '...' : 'NULL'}`;
-    console.log('[LiveMonitor] Connecting to', wsUrl.replace(/token=.*/, 'token=***'));
     setWsStatus('connecting');
-    setWsDebug(`Connecting: ${wsBase()}/ws/monitor/${code} token=${token ? 'present' : 'MISSING'}`);
+    setWsDebug(`Connecting to ${wsBase()}/ws/monitor/${code}`);
 
     const ws = new WebSocket(`${wsBase()}/ws/monitor/${code}?token=${token}`);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      console.log('[LiveMonitor] WS connected to', ws.url);
       setWsStatus('connected');
-      setWsDebug(`Connected: ${ws.url}`);
+      setWsDebug('');
       ws.send(JSON.stringify({ type: 'register', role: 'teacher' }));
     };
-
-    ws.onerror = (e) => {
-      console.error('[LiveMonitor] WS error', e);
-      setWsStatus('disconnected');
-      setWsDebug(`WS error — check console`);
-    };
-    ws.onclose = (e) => {
-      console.warn('[LiveMonitor] WS closed', e.code, e.reason);
-      setWsStatus('disconnected');
-      setWsDebug(`Closed: code=${e.code} reason="${e.reason || 'none'}" url=${ws.url}`);
-    };
+    ws.onerror = () => { setWsStatus('disconnected'); setWsDebug('WebSocket error'); };
+    ws.onclose = (e) => { setWsStatus('disconnected'); setWsDebug(`Closed: ${e.code} ${e.reason || ''}`); };
 
     ws.onmessage = async (e) => {
       const msg = JSON.parse(e.data);
 
       if (msg.type === 'students_list') {
-        // Seed cards from students already in room
         (msg.students as { session_id: string; name: string; flag_count: number; flags: any[] }[])
-          .forEach(s => {
-            setCards(prev => {
-              if (prev.has(s.session_id)) return prev;
-              const next = new Map(prev);
-              next.set(s.session_id, {
-                session_id: s.session_id,
-                name: s.name,
-                flag_count: s.flag_count,
-                flags: s.flags,
-                stream: null, pc: null,
-                status: 'active', tab_switches: 0, elapsed_ms: 0, score: null,
-              });
-              return next;
+          .forEach(s => setCards(prev => {
+            if (prev.has(s.session_id)) return prev;
+            const next = new Map(prev);
+            next.set(s.session_id, {
+              session_id: s.session_id, name: s.name,
+              flag_count: s.flag_count, flags: s.flags,
+              stream: null, frameUrl: null,
+              status: 'active', tab_switches: 0,
+              copy_paste_count: 0, fullscreen_exit_count: 0,
+              elapsed_ms: 0, score: null,
             });
-          });
+            return next;
+          }));
       }
 
       if (msg.type === 'student_joined') {
@@ -320,11 +324,11 @@ export default function LiveMonitorPage() {
           if (prev.has(msg.session_id)) return prev;
           const next = new Map(prev);
           next.set(msg.session_id, {
-            session_id: msg.session_id,
-            name: msg.name,
-            flag_count: 0, flags: [],
-            stream: null, pc: null,
-            status: 'active', tab_switches: 0, elapsed_ms: 0, score: null,
+            session_id: msg.session_id, name: msg.name,
+            flag_count: 0, flags: [], stream: null, frameUrl: null,
+            status: 'active', tab_switches: 0,
+            copy_paste_count: 0, fullscreen_exit_count: 0,
+            elapsed_ms: 0, score: null,
           });
           return next;
         });
@@ -336,20 +340,18 @@ export default function LiveMonitorPage() {
         setCards(prev => {
           const next = new Map(prev);
           const card = next.get(msg.session_id);
-          if (card) next.set(msg.session_id, { ...card, stream: null, status: 'abandoned' });
+          if (card) next.set(msg.session_id, { ...card, stream: null, frameUrl: null, status: 'abandoned' });
           return next;
         });
       }
 
-      if (msg.type === 'offer') {
-        await handleOffer(msg.session_id, msg.sdp);
-      }
+      if (msg.type === 'offer')  await handleOffer(msg.session_id, msg.sdp);
+      if (msg.type === 'frame')  handleFrame(msg.session_id, msg.data);
 
       if (msg.type === 'ice') {
         const pc = pcsRef.current.get(msg.session_id);
-        if (pc && msg.candidate) {
+        if (pc?.remoteDescription && msg.candidate)
           try { await pc.addIceCandidate(new RTCIceCandidate(msg.candidate)); } catch {}
-        }
       }
 
       if (msg.type === 'flag') {
@@ -357,10 +359,18 @@ export default function LiveMonitorPage() {
           const next = new Map(prev);
           const card = next.get(msg.session_id);
           if (card) {
+            // Use msg.count (student's running total) as the authoritative value for each
+            // type — this way duplicate messages (same count) don't inflate the display.
+            const newTabSwitches  = msg.flag_type === 'tab_switch'       ? msg.count : card.tab_switches;
+            const newCopyPaste    = msg.flag_type === 'copy_paste'        ? msg.count : card.copy_paste_count;
+            const newFsExit       = msg.flag_type === 'fullscreen_exit'   ? msg.count : card.fullscreen_exit_count;
             next.set(msg.session_id, {
               ...card,
-              flag_count: msg.count,
-              flags: [...card.flags, { type: msg.flag_type, timestamp: msg.timestamp }],
+              flag_count:            newTabSwitches + newCopyPaste + newFsExit,
+              flags:                 [...card.flags, { type: msg.flag_type, timestamp: msg.timestamp }],
+              tab_switches:          newTabSwitches,
+              copy_paste_count:      newCopyPaste,
+              fullscreen_exit_count: newFsExit,
             });
           }
           return next;
@@ -368,13 +378,11 @@ export default function LiveMonitorPage() {
       }
     };
 
-    // Start HTTP polling alongside WebSocket
     if (pollRef.current) clearInterval(pollRef.current);
     await pollSessions(code);
     pollRef.current = setInterval(() => pollSessions(code), 10_000);
-  }, [handleOffer, pollSessions]);
+  }, [handleOffer, handleFrame, pollSessions]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
       wsRef.current?.close();

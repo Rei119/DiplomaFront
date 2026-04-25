@@ -349,17 +349,14 @@ export default function ResultsView({ submissions, exams }: ResultsViewProps) {
             <StatusBadge status={status} />
           </div>
 
-          <div className="grid grid-cols-5 gap-3 mb-4">
-            {[
+          {(() => {
+            const copyPasteCount = (selectedSubmission as any).copy_paste_count ?? 0;
+            const fullscreenExitCount = (selectedSubmission as any).fullscreen_exit_count ?? 0;
+            const statItems = [
               {
                 label: 'Нийт оноо',
                 content: <InlineScoreEditor submissionId={selectedSubmission.id} currentScore={score} onSave={handleSaveScore} />,
                 bg: 'bg-primary-50 dark:bg-primary-900/20',
-              },
-              {
-                label: 'Тэнцэх оноо',
-                content: <span className="font-bold text-neutral-700 dark:text-neutral-300">{selectedExam.passing_score || 70}%</span>,
-                bg: 'bg-neutral-50 dark:bg-neutral-800',
               },
               {
                 label: 'Таб солилт',
@@ -368,37 +365,43 @@ export default function ResultsView({ submissions, exams }: ResultsViewProps) {
                     {selectedSubmission.tab_switches ?? 0}
                   </span>
                 ),
-                bg: 'bg-neutral-50 dark:bg-neutral-800',
+                bg: (selectedSubmission.tab_switches ?? 0) > 0 ? 'bg-amber-50 dark:bg-amber-900/20' : 'bg-neutral-50 dark:bg-neutral-800',
               },
               {
-                label: 'Доош харсан',
+                label: 'Хуулах/буулгах',
                 content: (
-                  <span className={`font-bold ${
-                    lookDownCount === 0 ? 'text-neutral-700 dark:text-neutral-300'
-                    : lookDownCount < 5 ? 'text-amber-600'
-                    : 'text-red-600'
-                  }`}>
-                    {lookDownCount}
+                  <span className={`font-bold ${copyPasteCount > 0 ? 'text-orange-600' : 'text-neutral-700 dark:text-neutral-300'}`}>
+                    {copyPasteCount}
                   </span>
                 ),
-                bg: lookDownCount === 0
-                  ? 'bg-neutral-50 dark:bg-neutral-800'
-                  : lookDownCount < 5
-                    ? 'bg-amber-50 dark:bg-amber-900/20'
-                    : 'bg-red-50 dark:bg-red-900/20',
+                bg: copyPasteCount > 0 ? 'bg-orange-50 dark:bg-orange-900/20' : 'bg-neutral-50 dark:bg-neutral-800',
+              },
+              {
+                label: 'Дэлгэц гарсан',
+                content: (
+                  <span className={`font-bold ${fullscreenExitCount > 0 ? 'text-purple-600' : 'text-neutral-700 dark:text-neutral-300'}`}>
+                    {fullscreenExitCount}
+                  </span>
+                ),
+                bg: fullscreenExitCount > 0 ? 'bg-purple-50 dark:bg-purple-900/20' : 'bg-neutral-50 dark:bg-neutral-800',
               },
               {
                 label: 'Асуулт',
                 content: <span className="font-bold text-neutral-700 dark:text-neutral-300">{selectedExam.questions?.length ?? 0}</span>,
                 bg: 'bg-neutral-50 dark:bg-neutral-800',
               },
-            ].map(({ label, content, bg }) => (
-              <div key={label} className={`${bg} rounded-lg p-3`}>
-                <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">{label}</p>
-                {content}
+            ];
+            return (
+              <div className="grid grid-cols-5 gap-3 mb-4">
+                {statItems.map(({ label, content, bg }) => (
+                  <div key={label} className={`${bg} rounded-lg p-3`}>
+                    <p className="text-xs text-neutral-500 dark:text-neutral-400 mb-1.5">{label}</p>
+                    {content}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
+            );
+          })()}
 
           {score != null && <ScoreBar score={score} passing={selectedExam.passing_score || 70} />}
         </div>
@@ -663,10 +666,20 @@ export default function ResultsView({ submissions, exams }: ResultsViewProps) {
                           </>
                         );
                       })()}
-                      <p className="text-xs text-neutral-400 dark:text-neutral-500 flex items-center gap-2">
+                      <p className="text-xs text-neutral-400 dark:text-neutral-500 flex items-center gap-2 flex-wrap">
                         {new Date(sub.created_at).toLocaleString('mn-MN')}
                         {sub.tab_switches > 0 && (
-                          <span className="text-amber-500 dark:text-amber-400">{sub.tab_switches} tab</span>
+                          <span className="text-amber-500 dark:text-amber-400" title="Таб солилт">{sub.tab_switches} tab</span>
+                        )}
+                        {((sub as any).copy_paste_count ?? 0) > 0 && (
+                          <span className="text-orange-500 dark:text-orange-400" title="Хуулах/буулгах оролдлого">
+                            {(sub as any).copy_paste_count} cp
+                          </span>
+                        )}
+                        {((sub as any).fullscreen_exit_count ?? 0) > 0 && (
+                          <span className="text-purple-500 dark:text-purple-400" title="Бүтэн дэлгэцээс гарсан">
+                            {(sub as any).fullscreen_exit_count} fs
+                          </span>
                         )}
                         {lookDownCount > 0 && (
                           <span className={`flex items-center gap-0.5 ${lookDownCount >= 5 ? 'text-red-500' : 'text-amber-500'}`}>

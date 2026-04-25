@@ -29,6 +29,8 @@ export interface Submission {
   started_at?: string;
   submitted_at?: string;
   tab_switches: number;
+  copy_paste_count?: number;
+  fullscreen_exit_count?: number;
   behavior_score?: number;
   individual_scores?: Record<string, IndividualScore>;
   ai_grading_results?: Record<string, any>;
@@ -51,6 +53,8 @@ export interface SubmissionResponse {
   status: string;
   created_at: string;
   tab_switches: number;
+  copy_paste_count?: number;
+  fullscreen_exit_count?: number;
   behavior_score?: number;
   individual_scores?: Record<string, IndividualScore>;
   ai_grading_results?: Record<string, any>;
