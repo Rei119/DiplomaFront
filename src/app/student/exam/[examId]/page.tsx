@@ -33,12 +33,6 @@ import { examsAPI, submissionsAPI } from '@/lib/api/client';
 import { useAuthStore } from '@/lib/store/authStore';
 import type { Exam, Question } from '@/types';
 
-const MAJORS = [
-  'Мэдээлэл, компьютерын ухаан', 'Програм хангамж',
-  'Мэдээллийн технологи', 'Кибер аюулгүй байдал',
-  'Мэдээллийн систем', 'Математик', 'Физик', 'Электроник', 'Бусад',
-];
-
 function needsScienceKeyboard(question: Question, studentMajor?: string): boolean {
   if (question.question?.includes('$')) return true;
   const scienceKeywords = ['томъёо', 'тэгшитгэл', 'урвал', 'хими', 'физик', 'молекул', 'атом', 'язгуур', 'интеграл', 'уламжлал'];
@@ -58,7 +52,6 @@ interface StudentInfoFormProps {
 function StudentInfoForm({ exam, onStart }: StudentInfoFormProps) {
   const [studentIdNumber, setStudentIdNumber] = useState('');
   const [studentMajor, setStudentMajor] = useState('');
-  const [customMajor, setCustomMajor] = useState('');
   const [errors, setErrors] = useState<{ id?: string; major?: string }>({});
 
   const validate = () => {
@@ -68,16 +61,14 @@ function StudentInfoForm({ exam, onStart }: StudentInfoFormProps) {
     } else if (!/^[A-Z0-9]{4,20}$/i.test(studentIdNumber.trim())) {
       newErrors.id = 'Зөв формат оруулна уу (жишээ: 22B1NUM0002)';
     }
-    const finalMajor = studentMajor === 'Бусад' ? customMajor : studentMajor;
-    if (!finalMajor.trim()) newErrors.major = 'Мэргэжил сонгоно уу';
+    if (!studentMajor.trim()) newErrors.major = 'Мэргэжил оруулна уу';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
 
   const handleStart = () => {
     if (!validate()) return;
-    const finalMajor = studentMajor === 'Бусад' ? customMajor.trim() : studentMajor;
-    onStart(studentIdNumber.trim().toUpperCase(), finalMajor);
+    onStart(studentIdNumber.trim().toUpperCase(), studentMajor.trim());
   };
 
   return (
@@ -134,17 +125,11 @@ function StudentInfoForm({ exam, onStart }: StudentInfoFormProps) {
               <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-1.5">
                 Мэргэжил <span className="text-red-500">*</span>
               </label>
-              <select value={studentMajor}
+              <input type="text" value={studentMajor}
                 onChange={e => { setStudentMajor(e.target.value); setErrors(p => ({ ...p, major: undefined })); }}
-                className={`w-full px-4 py-3 border-2 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all ${errors.major ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/20 text-neutral-900 dark:text-neutral-100' : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:border-primary-400'}`}>
-                <option value="">Мэргэжил сонгоно уу...</option>
-                {MAJORS.map(m => <option key={m} value={m}>{m}</option>)}
-              </select>
-              {studentMajor === 'Бусад' && (
-                <input type="text" value={customMajor} onChange={e => setCustomMajor(e.target.value)}
-                  placeholder="Мэргэжлээ бичнэ үү"
-                  className="w-full px-4 py-3 border-2 border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 mt-2" />
-              )}
+                onKeyDown={e => e.key === 'Enter' && handleStart()}
+                placeholder="Жишээ: Програм хангамж, Эдийн засаг..."
+                className={`w-full px-4 py-3 border-2 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 transition-all ${errors.major ? 'border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-950/20 text-neutral-900 dark:text-neutral-100' : 'border-neutral-200 dark:border-neutral-700 bg-white dark:bg-neutral-800 text-neutral-900 dark:text-neutral-100 focus:border-primary-400'}`} />
               {errors.major && <p className="text-xs text-red-600 dark:text-red-400 mt-1.5 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />{errors.major}</p>}
             </div>
           </div>
