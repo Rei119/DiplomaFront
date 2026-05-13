@@ -14,18 +14,18 @@ export const MATH_SYMBOLS: Symbol[] = [
   // Powers & indices
   { label: 'x²',  latex: '²',            description: 'Дэд зэрэг 2' },
   { label: 'x³',  latex: '³',            description: 'Дэд зэрэг 3' },
-  { label: 'xⁿ',  latex: '^{}',          description: 'Зэрэг (дурын)' },
+  { label: 'xⁿ',  latex: '^',            description: 'Зэрэг (дурын)' },
   { label: 'x₁',  latex: '₁',            description: 'Доод индекс 1' },
   { label: 'x₂',  latex: '₂',            description: 'Доод индекс 2' },
-  { label: 'xₙ',  latex: '_{}',          description: 'Доод индекс (дурын)' },
+  { label: 'xₙ',  latex: 'ₙ',           description: 'Доод индекс (дурын)' },
 
   // Fractions & roots
   { label: '½',   latex: '½',            description: 'Тэн хагас' },
   { label: '⅓',   latex: '⅓',            description: 'Гуравны нэг' },
-  { label: 'a/b', latex: '\\frac{}{}',   description: 'Бутархай' },
+  { label: 'a/b', latex: 'a/b',          description: 'Бутархай' },
   { label: '√',   latex: '√',            description: 'Квадрат язгуур' },
   { label: '∛',   latex: '∛',            description: 'Куб язгуур' },
-  { label: 'ⁿ√',  latex: '\\sqrt[n]{}', description: 'n-р язгуур' },
+  { label: 'ⁿ√',  latex: 'ⁿ√',          description: 'n-р язгуур' },
 
   // Basic operators
   { label: '±',   latex: '±',            description: 'Нэмэх/хасах' },

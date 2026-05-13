@@ -267,11 +267,12 @@ export default function TakeExam() {
         || (document as any).mozFullScreenElement
         || (document as any).msFullscreenElement);
     const checkFS = () => {
+      // Don't count the fullscreen exit that happens automatically on submission/navigation
+      if (submittingRef.current) return;
       if (isFullscreen()) {
         wasFullscreenRef.current = true;
       } else {
         if (wasFullscreenRef.current) {
-          // Student was in fullscreen and just exited — count it.
           wasFullscreenRef.current = false;
           fullscreenExitRef.current += 1;
           const ws = monitorWsRef.current;

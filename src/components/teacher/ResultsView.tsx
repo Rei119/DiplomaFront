@@ -114,15 +114,15 @@ function InlineScoreEditor({ submissionId, currentScore, onSave }: {
   );
 }
 
-function StatusBadge({ status }: { status: 'passed' | 'failed' | 'cheat' | 'pending' }) {
+function StatusDot({ status }: { status: 'passed' | 'failed' | 'cheat' | 'pending' }) {
   const map = {
-    passed:  { label: 'Тэнцсэн',         cls: 'bg-primary-50 text-primary-700 border-primary-200' },
-    failed:  { label: 'Тэнцээгүй',       cls: 'bg-red-50 text-red-700 border-red-200' },
-    cheat:   { label: 'Хуурсан',         cls: 'bg-red-50 text-red-700 border-red-200' },
-    pending: { label: 'Хүлээгдэж байна', cls: 'bg-neutral-100 text-neutral-500 border-neutral-200' },
+    passed:  { label: 'Тэнцсэн',         cls: 'text-primary-600 dark:text-primary-400' },
+    failed:  { label: 'Тэнцээгүй',       cls: 'text-red-500 dark:text-red-400' },
+    cheat:   { label: 'Хуурсан',         cls: 'text-red-500 dark:text-red-400' },
+    pending: { label: 'Хүлээгдэж байна', cls: 'text-neutral-400 dark:text-neutral-500' },
   };
   const { label, cls } = map[status];
-  return <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-xs font-semibold border ${cls}`}>{label}</span>;
+  return <span className={`text-xs font-medium ${cls}`}>{label}</span>;
 }
 
 function getStatus(sub: Submission, passingScore: number): 'passed' | 'failed' | 'cheat' | 'pending' {
@@ -346,7 +346,7 @@ export default function ResultsView({ submissions, exams }: ResultsViewProps) {
                 {new Date(selectedSubmission.created_at).toLocaleString('mn-MN')}
               </p>
             </div>
-            <StatusBadge status={status} />
+            <StatusDot status={status} />
           </div>
 
           {(() => {
@@ -635,7 +635,6 @@ export default function ResultsView({ submissions, exams }: ResultsViewProps) {
             .map((sub, rank) => {
               const status        = getStatus(sub, passing);
               const lookDownCount = (sub as any).look_down_count ?? 0;
-              const studentLabel  = getStudentLabel(sub);
 
               return (
                 <div key={sub.id} className="bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-800 hover:border-neutral-300 dark:hover:border-neutral-700 rounded-xl overflow-hidden transition-colors">
@@ -690,7 +689,7 @@ export default function ResultsView({ submissions, exams }: ResultsViewProps) {
                     </div>
 
                     <InlineScoreEditor submissionId={sub.id} currentScore={sub.total_score ?? null} onSave={handleSaveScore} />
-                    <StatusBadge status={status} />
+                    <StatusDot status={status} />
 
                     <button
                       onClick={() => setSelectedSubmission(sub)}
