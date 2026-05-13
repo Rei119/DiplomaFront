@@ -234,7 +234,7 @@ export default function ResultsView({ submissions, exams }: ResultsViewProps) {
         </nav>
 
         {/* Student summary */}
-        <div className="border-b border-neutral-200 dark:border-neutral-800 pb-5">
+        <div className="border border-neutral-200 dark:border-neutral-800 rounded-xl p-4 mb-1">
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="font-semibold text-neutral-900 dark:text-neutral-100">{selectedSubmission.student_full_name || selectedSubmission.student_username}</p>
@@ -402,7 +402,7 @@ export default function ResultsView({ submissions, exams }: ResultsViewProps) {
           <p className="text-sm text-neutral-400 dark:text-neutral-500">{summaryParts}</p>
         </div>
 
-        <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
+        <div className="border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden divide-y divide-neutral-100 dark:divide-neutral-800">
           {examSubs
             .slice()
             .sort((a, b) => (b.total_score ?? -1) - (a.total_score ?? -1))
@@ -421,7 +421,7 @@ export default function ResultsView({ submissions, exams }: ResultsViewProps) {
               ].filter(Boolean).join(' · ');
 
               return (
-                <div key={sub.id} className="py-3 flex items-center gap-3">
+                <div key={sub.id} className="px-4 py-3 flex items-center gap-3 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors">
                   <span className="text-xs text-neutral-300 dark:text-neutral-600 w-5 text-right flex-shrink-0 tabular-nums">{rank + 1}</span>
 
                   <div className="flex-1 min-w-0">
@@ -483,7 +483,7 @@ export default function ResultsView({ submissions, exams }: ResultsViewProps) {
         <p className="text-sm text-neutral-400 dark:text-neutral-500 mt-0.5">{examsWithSubs.length} шалгалт · {localSubs.length} илгээлт</p>
       </div>
 
-      <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
+      <div className="border border-neutral-200 dark:border-neutral-800 rounded-xl overflow-hidden divide-y divide-neutral-100 dark:divide-neutral-800">
         {examsWithSubs.map(exam => {
           const stats = calcStats(exam.id);
           if (!stats) return null;
@@ -500,7 +500,7 @@ export default function ResultsView({ submissions, exams }: ResultsViewProps) {
             <button
               key={exam.id}
               onClick={() => setSelectedExam(exam)}
-              className="w-full text-left py-4 flex items-center gap-4 hover:bg-neutral-50 dark:hover:bg-neutral-900/50 -mx-2 px-2 rounded-lg transition-colors group"
+              className="w-full text-left px-4 py-3.5 flex items-center gap-4 bg-white dark:bg-neutral-900 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors group"
             >
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-neutral-900 dark:text-neutral-100 group-hover:text-neutral-700 dark:group-hover:text-neutral-200 transition-colors truncate">{exam.title}</p>
