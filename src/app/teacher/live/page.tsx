@@ -45,15 +45,6 @@ interface LiveSession {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function fmt(ms: number) {
-  const s = Math.floor(ms / 1000);
-  const m = Math.floor(s / 60);
-  const h = Math.floor(m / 60);
-  if (h > 0) return `${h}ц ${m % 60}м`;
-  if (m > 0) return `${m}м ${s % 60}с`;
-  return `${s}с`;
-}
-
 function apiBase() {
   return process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
 }
@@ -392,7 +383,7 @@ export default function LiveMonitorPage() {
     };
   }, []);
 
-  const handleSearch = async (e: React.FormEvent) => {
+  const handleSearch = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const code = inputCode.trim().toUpperCase();
     if (!code) return;
@@ -507,22 +498,26 @@ export default function LiveMonitorPage() {
         )}
       </main>
 
-      {selectedCard && (
-        <div className="fixed inset-0 bg-black/90 z-50 flex flex-col" onClick={() => setSelectedCard(null)}>
-          <div className="flex items-center justify-between px-5 h-12 border-b border-white/10">
-            <span className="text-white font-medium text-sm">{selectedCard.name}</span>
-            <div className="flex items-center gap-4 text-xs text-neutral-400">
-              {selectedCard.tab_switches > 0 && <span className="text-amber-300">Tab: {selectedCard.tab_switches}</span>}
-              {selectedCard.copy_paste_count > 0 && <span className="text-orange-300">CP: {selectedCard.copy_paste_count}</span>}
-              {selectedCard.fullscreen_exit_count > 0 && <span className="text-purple-300">FS: {selectedCard.fullscreen_exit_count}</span>}
-              <button onClick={() => setSelectedCard(null)} className="text-neutral-400 hover:text-white ml-2">✕</button>
+      {selectedCard && (() => {
+        // Always read the live card so violation counts and stream stay current.
+        const liveCard = cards.get(selectedCard.session_id) ?? selectedCard;
+        return (
+          <div className="fixed inset-0 bg-black/90 z-50 flex flex-col" onClick={() => setSelectedCard(null)}>
+            <div className="flex items-center justify-between px-5 h-12 border-b border-white/10">
+              <span className="text-white font-medium text-sm">{liveCard.name}</span>
+              <div className="flex items-center gap-4 text-xs text-neutral-400">
+                {liveCard.tab_switches > 0 && <span className="text-amber-300">Tab: {liveCard.tab_switches}</span>}
+                {liveCard.copy_paste_count > 0 && <span className="text-orange-300">CP: {liveCard.copy_paste_count}</span>}
+                {liveCard.fullscreen_exit_count > 0 && <span className="text-purple-300">FS: {liveCard.fullscreen_exit_count}</span>}
+                <button onClick={() => setSelectedCard(null)} className="text-neutral-400 hover:text-white ml-2">✕</button>
+              </div>
+            </div>
+            <div className="flex-1 flex items-center justify-center p-4" onClick={e => e.stopPropagation()}>
+              <ExpandedCard card={liveCard} />
             </div>
           </div>
-          <div className="flex-1 flex items-center justify-center p-4" onClick={e => e.stopPropagation()}>
-            <ExpandedCard card={selectedCard} />
-          </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
